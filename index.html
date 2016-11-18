@@ -290,6 +290,8 @@
 
             counties.selectAll("path")
                 .attr("fill", function(d) {
+                    // I don't know why some of these id's arean't in the dict
+                    // diapering over for now
                     try {
                       trump_val = results[d.id]['trump']
                     }
