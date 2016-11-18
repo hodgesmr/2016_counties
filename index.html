@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+.background {
+    fill: #FFF;
+}
+
+.map-target {
+    width: 100%;
+    position: relative;
+}
+
+.home-btn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    display: none;
+}
+
+.tooltip {
+    position: absolute;
+    padding: 4px 8px;
+    background-color: #fff;
+    z-index: 2;
+    text-align: center;
+    border: 1px solid #CCC;
+    display: none;
+}
+
+.map-g .feature {
+    stroke: #FFF;
+    cursor: zoom-in;
+}
+
+.map-g .feature.active {
+    stroke: #000;
+}
+
+
+.map-g.zoomed .background {
+    cursor: zoom-out;
+}
+
+.map-g.zoomed .feature.centered {
+    cursor: zoom-out;
+}
+
+</style>
+
+<body>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="https://d3js.org/topojson.v1.min.js"></script>
+    <script src="https://d3js.org/queue.v1.min.js"></script>
+
+
+    <form>
+      <input type="radio" name="level" val="trump" checked="checked">Trump </input>
+      <input type="radio" name="level" val="clinton">Clinton </input>
+    </form>
+
+
+    <div class="map-target"></div>
+
+<script>
+
+    var electionMap = function(opts) {
+
+        // load in arguments from config object
+        this.geo = opts.geo;
+        this.element = opts.element;
+        this.view = opts.view;
+
+        // create the Map
+        this.draw();
+        this.setView();
+        this.update();
+
+    }
+
+    electionMap.prototype.draw = function() {
+
+        //Set width/height/margins
+        this.setDimensions();
+
+        // set up parent element and SVG
+        this.element.innerHTML = "";
+        this.svg = d3.select(this.element).append('svg');
+
+        this.element.style.width = this.width;
+        this.svg.attr('width', this.width);
+        this.svg.attr('height', this.height);
+
+        this.centered = null; //Store path data if map is zoomed to path
+        this.isZoomed = false; //Store path data if map is zoomed to path
+        this.maxZoom = 5; //Level to zoom into when area or region is clicked.
+        this.lineStroke = .5; //Stroke width to maintain at various zoom levels.
+
+        this.homeButton(); //Add a "reset map" button to the target element
+
+        // we'll actually be appending to a <g> element
+        this.plot = this.svg.append('g')
+            .attr('transform', 'translate(' + this.margin.left + ',' + this.margin.top + ')')
+            .attr("class", "map-g");
+
+        //Append an invisible background element so we have something to click on in negative space
+        this.plot.append("rect")
+            .attr("class", "background")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("width", this.width)
+            .attr("height", this.height)
+            .on("click", function(d) {
+                var el = this;
+                if (_this.isZoomed) {
+                    _this.clicked(d, el);
+                }
+            });
+
+        //Append the tooltip div to the map target
+        this.tooltipDiv = d3.select(this.element)
+            .append("div")
+            .attr("class", "tooltip");
+
+        //Set the projection according to width/height
+        this.resetProjection();
+
+        /* DRAW THE MAP FEATURES */
+        var _this = this; //Store value of this for use inside selection-nested functions
+
+
+        /* ------------------- */
+        /* COUNTIES */
+        /* ------------------- */
+
+        var counties = this.plot.append("g")
+            .attr("class", "counties-g");
+
+        counties.selectAll("path")
+            .data(topojson.feature(this.geo, this.geo.objects.counties).features)
+            .enter().append("path")
+            .attr("d", _this.path)
+            .attr("class", "county feature");
+
+        /* END COUNTIES */
+        /* ------------------- */
+
+        //Assign mouse events to all geographies
+        var features = this.plot.selectAll(".feature")
+            .on("mouseover", function(d) {
+                d3.select(this).classed("active", true).moveToFront();
+                _this.tooltip(d);
+                _this.tooltipDiv.style('display', 'inherit');
+            })
+            .on("mouseout", function(d) {
+                d3.select(this).classed("active", false);
+                _this.tooltipDiv.style('display', 'none');
+            })
+            .on("mousemove", function() {
+
+                //Get page offset position of map container
+                //This tooltip positioning method should work across browsers
+                var bodyRect = document.body.getBoundingClientRect(),
+                    elemRect = _this.element.getBoundingClientRect(),
+                    offsetTop = elemRect.top - bodyRect.top,
+                    offsetLeft = elemRect.left - bodyRect.left;
+
+                //Mouse positions
+                var xPos = d3.event.pageX - offsetLeft;
+                var yPos = d3.event.pageY - offsetTop;
+
+                //Tooltip dimensions
+                var ttWidth = parseInt(_this.tooltipDiv.style("width").replace("px", ""), 10);
+                var ttHeight = parseInt(_this.tooltipDiv.style("height").replace("px", ""), 10);
+
+                //Tooltip positions
+                var ttLeft = xPos - (ttWidth / 2);
+                var ttTop = yPos - ttHeight - 30;
+
+                //Some spacing logic to ensure tooltip doesn't get cut off by parent container
+                var maxRight = _this.width - (ttWidth / 2);
+
+                //If too far to the right
+                if (ttLeft + (ttWidth / 2) >= maxRight) {
+                    ttLeft = maxRight - (ttWidth / 2);
+                }
+
+                //If too close to the top
+                if (ttTop < 0) {
+                    ttTop = yPos + 30;
+                }
+
+                //If too far to the left
+                if (ttLeft < 0) {
+                    ttLeft = 0;
+                }
+
+                _this.tooltipDiv.style({
+                    "top": ttTop + "px",
+                    "left": ttLeft + "px"
+                });
+            })
+            .on("click", function(d) {
+                var el = this;
+                _this.clicked(d, el);
+            });
+
+
+    }
+
+    electionMap.prototype.setColor = function(trump_val, clinton_val) {
+
+        if (this.view === "trump") {
+            if (!trump_val) {
+                return "#CCC"
+            }
+            return "rgba(256, 0, 0, " + (trump_val) + ")"
+        }
+        if (this.view === "clinton") {
+          if (!clinton_val) {
+              return "#CCC"
+          }
+            return "rgba(0, 0, 256, " + (clinton_val) + ")"
+        }
+    }
+
+    electionMap.prototype.resetProjection = function() {
+
+        //Multiplier to determine how map fits in container.
+        projectionRatio = 1;
+
+        this.path = d3.geo.path();
+
+        this.projection = d3.geo.albersUsa()
+            .scale(this.width * projectionRatio)
+            .translate([this.width / 2, this.height / 2]);
+
+        this.path.projection(this.projection);
+    }
+
+    electionMap.prototype.setDimensions = function() {
+        // define width, height and margin
+        this.width = this.element.offsetWidth;
+        this.height = this.element.offsetWidth * .5; //Determine desired height here
+        this.margin = {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0
+        };
+    }
+
+
+    //Set view as "trump", "clinton"
+    electionMap.prototype.setView = function() {
+        var counties = this.plot.select(".counties-g").style("display", "inherit");
+    }
+
+
+    /* ---------------------------------------- */
+    /* FIRE THIS FUNCTION TO UPDATE MAP DATA */
+    /* ---------------------------------------- */
+    electionMap.prototype.update = function(liveData) {
+
+        /* ------------- */
+        /* This model assumes data would be available as a dictionary object */
+        /* in which results are looked up by geographic ID or FIPS values */
+        /* Each feature in the selections below has a unique state, county, or district ID */
+        /* So you'd use it to look up the corresponding result in each iteration */
+        /* ------------- */
+
+        //Set width/height/margins
+        this.setDimensions();
+
+        //Update svg dimensions
+        this.svg.attr('width', this.width);
+        this.svg.attr('height', this.height);
+
+        var _this = this;
+
+        this.plot.selectAll("path")
+            .attr("d", _this.path);
+
+        var counties = this.plot.select(".counties-g");
+
+        d3.json("2016_county_results.json", function(error, results) {
+            if (error) throw error;
+
+            counties.selectAll("path")
+                .attr("fill", function(d) {
+                    try {
+                      trump_val = results[d.id]['trump']
+                    }
+                    catch(err) {
+                        trump_val = null
+                    }
+                    try {
+                        clinton_val = results[d.id]['clinton']
+                    }
+                    catch(err) {
+                        clinton_val = null
+                    }
+                    try {
+                        d.county = results[d.id]['county']
+                    }
+                    catch(err) {
+                        d.county = 'ERROR'
+                    }
+                    try {
+                        d.state = results[d.id]['state']
+                    }
+                    catch(err) {
+                        d.state = 'ERROR'
+                    }
+                    d.trump_val = trump_val
+                    d.clinton_val = clinton_val
+                    return _this.setColor(trump_val, clinton_val);
+                });
+        });
+
+
+    }
+
+    electionMap.prototype.homeButton = function() {
+        var _this = this;
+
+        d3.select(this.element).append("button")
+            .attr("class", "home-btn")
+            .html("Reset Map")
+            .on("click", function() {
+                //Recenter map
+                _this.zoomScale(1, (_this.width) / 2, (_this.height / 2));
+                d3.select(this).style("display", "none");
+            })
+    }
+
+    //Zoom to center of selected feature when clicked
+    electionMap.prototype.clicked = function(d, el) {
+
+        var x, y, k; //left, top, zoom
+
+        var _this = this;
+
+        if (d && _this.centered !== d) {
+
+            var centroid = _this.path.centroid(d);
+            x = centroid[0];
+            y = centroid[1];
+            k = _this.maxZoom;
+            _this.centered = d;
+            d3.select(el).classed("centered", true);
+            _this.isZoomed = true;
+
+            d3.select(".home-btn").style("display", "inherit");
+
+        } else {
+            x = _this.width / 2;
+            y = _this.height / 2;
+            k = 1;
+            _this.centered = null;
+            d3.select(el).classed("centered", false);
+            _this.isZoomed = false;
+
+            d3.select(".home-btn").style("display", "none");
+        }
+
+        _this.plot.classed("zoomed", _this.isZoomed);
+        _this.zoomScale(k, x, y);
+
+    }
+
+
+    //Set new scale and translate position and size strokes according to scale.
+    electionMap.prototype.zoomScale = function(k, x, y) {
+
+        var _this = this;
+
+        _this.plot.transition()
+            .duration(750)
+            .attr("transform", "translate(" + (_this.width / 2) + "," + (_this.height / 2) + ")scale(" + k + ")translate(" + -x + "," + -y + ")")
+
+        _this.plot.selectAll(".feature")
+            .style("stroke-width", (_this.lineStroke / k));
+
+    }
+
+    electionMap.prototype.tooltip = function(d) {
+        var txt = d.county + ", " + d.state + "<br />";
+
+        if (this.view == "trump") {
+          txt += "Trump: " + (d.trump_val*100).toFixed(2) + "%";
+        }
+        if (this.view == "clinton") {
+          txt += "Clinton: " + (d.clinton_val*100).toFixed(2) + "%";
+        }
+
+        d3.select(".tooltip").html(txt);
+
+    }
+
+
+    function init() {
+
+        d3.json("counties.json", function(error, us) {
+            if (error) throw error;
+
+
+            // create new Map using Map constructor
+            var theMap = new electionMap({
+                element: document.querySelector('.map-target'),
+                geo: us,
+                view: "trump"
+            });
+
+            d3.selectAll("input")
+                .on("click", function() {
+                    theMap.view = d3.select(this).attr("val");
+                    theMap.setView();
+                    theMap.update();
+                });
+
+            // redraw Map on each resize
+            d3.select(window).on('resize', function() {
+                theMap.update();
+            });
+
+        });
+    }
+
+    init();
+
+
+    /* HELPER FUNCTIONS */
+    //Move to front and back controls z-index of features on mouseover and mouseout.
+    d3.selection.prototype.moveToFront = function() {
+        return this.each(function() {
+            this.parentNode.appendChild(this);
+        });
+    };
+
+    d3.selection.prototype.moveToBack = function() {
+        return this.each(function() {
+            var firstChild = this.parentNode.firstChild;
+            if (firstChild) {
+                this.parentNode.insertBefore(this, firstChild);
+            }
+        });
+    };
+
+</script>
