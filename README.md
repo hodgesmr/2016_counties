@@ -14,7 +14,7 @@ python download_and_parse.py
 
 ## Special thanks
 
-- This was my first time playing with D3. Shoutout to [Chris Canipe's example](http://bl.ocks.org/chriscanipe/071984bcf482971a94900a01fdb988fa) for getting me 95% of the way there!
+- This was my first time playing with [D3](https://d3js.org/). Shoutout to [Chris Canipe's example](http://bl.ocks.org/chriscanipe/071984bcf482971a94900a01fdb988fa) for getting me 95% of the way there!
 
 - This project pulls data from [tonmcg's parsed election results](https://github.com/tonmcg/County_Level_Election_Results_12-16)
 
