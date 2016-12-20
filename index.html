@@ -76,6 +76,7 @@
         <form>
           <input type="radio" name="level" val="trump" checked="checked">Trump </input>
           <input type="radio" name="level" val="clinton">Clinton </input>
+          <input type="radio" name="level" val="tossup">Toss-up </input>
         </form>
 
 
@@ -239,10 +240,23 @@
                 return "rgba(255, 0, 0, " + (trump_val) + ")"
             }
             if (this.view === "clinton") {
-              if (!clinton_val) {
-                  return "#CCC"
-              }
+                if (!clinton_val) {
+                    return "#CCC"
+                }
                 return "rgba(0, 0, 255, " + (clinton_val) + ")"
+            }
+            if (this.view == "tossup") {
+                if (!clinton_val || !trump_val) {
+                    return "#CCC"
+                }
+                diff = Math.abs(clinton_val - trump_val) * 10
+                if (diff < 1) {
+                    result = 1 - diff
+                }
+                else {
+                    return "#CCC"
+                }
+                return "rgba(255, 0, 255, " + result + ")"
             }
         }
 
@@ -273,7 +287,7 @@
         }
 
 
-        //Set view as "trump", "clinton"
+        //Set view as "trump", "clinton", "tossup"
         electionMap.prototype.setView = function() {
             var counties = this.plot.select(".counties-g").style("display", "inherit");
         }
@@ -417,7 +431,9 @@
             if (this.view == "clinton") {
               txt += "Clinton: " + (d.clinton_val*100).toFixed(2) + "%";
             }
-
+            if (this.view == "tossup") {
+                txt += "Margin: " + (Math.abs(d.clinton_val - d.trump_val)*100).toFixed(2) + " points"
+            }
             d3.select(".tooltip").html(txt);
 
         }
